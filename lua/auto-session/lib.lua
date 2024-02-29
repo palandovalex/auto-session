@@ -11,6 +11,7 @@ local Lib = {
   _VIM_FALSE = 0,
   _VIM_TRUE = 1,
   ROOT_DIR = nil,
+  SESSION_TABLE = nil,
 }
 
 function Lib.setup(config)
@@ -18,6 +19,7 @@ function Lib.setup(config)
   Lib.logger = Logger:new {
     log_level = Lib.conf.log_level,
   }
+  Lib.SESSION_TABLE = Lib.load_session_table()
 end
 
 function Lib.get_file_name(url)
@@ -95,56 +97,107 @@ function Lib.init_file(file_path)
   end
 end
 
-local function win32_unescaped_dir(dir)
-  dir = dir:gsub("++", ":")
-  if not vim.o.shellslash then
-    dir = dir:gsub("-", "\\")
+
+math.randomseed(os.time()) -- Seed the random number generator
+
+function Lib.uuid()
+    local template ='xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
+    return string.gsub(template, '[xy]', function (c)
+        local v = (c == 'x') and math.random(0, 0xf) or math.random(8, 0xb)
+        return string.format('%x', v)
+    end)
+end
+
+-- Function to load the table from a CSV file
+function Lib.load_table(file_path)
+  local file = io.open(file_path, "r")
+  if not file then
+      print("Error: Could not open file for reading.")
+      return nil
   end
-
-  return dir
-end
-
-local function win32_escaped_dir(dir)
-  dir = dir:gsub(":", "++")
-  if not vim.o.shellslash then
-    dir = dir:gsub("\\", "-")
-    -- need to escape forward slash as well for windows, see issue #202
-    dir = dir:gsub("/", "-")
+  local lines = {}
+  for line in file:lines() do
+      local uuid, path = line:match("^(.-),(.+)$")
+      if uuid and path then
+          lines[uuid] = path
+      end
   end
-
-  return dir
+  file:close()
+  Lib.SESSION_TABLE = lines
 end
 
-local IS_WIN32 = vim.fn.has "win32" == Lib._VIM_TRUE
+-- Function to save the table to a CSV file
+function Lib.save_table()
 
-function Lib.unescape_dir(dir)
-  return IS_WIN32 and win32_unescaped_dir(dir) or dir:gsub("%%", "/")
-end
-
-function Lib.escape_dir(dir)
-  return IS_WIN32 and win32_escaped_dir(dir) or dir:gsub("/", "\\%%")
-end
-
-function Lib.escaped_session_name_from_cwd()
-  return IS_WIN32 and Lib.unescape_dir(vim.fn.getcwd()) or Lib.escape_dir(vim.fn.getcwd())
-end
-
-function Lib.escape_branch_name(branch_name)
-  return IS_WIN32 and Lib.unescape_dir(branch_name) or Lib.escape_dir(branch_name)
-end
-
-local function get_win32_legacy_cwd(cwd)
-  cwd = cwd:gsub(":", "++")
-  if not vim.o.shellslash then
-    cwd = cwd:gsub("\\", "-")
+  file_path = Lib.Config
+  local file = io.open(file_path, "w")
+  if not file then
+      print("Error: Could not open file for writing.")
+      return false
   end
-
-  return cwd
+  for uuid, path in pairs(table_to_save) do
+      file:write(uuid .. "," .. path .. "\n")
+  end
+  file:close()
+  return true
 end
+-- local function win32_unescaped_dir(dir)
+--   dir = dir:gsub("++", ":")
+--   if not vim.o.shellslash then
+--     dir = dir:gsub("-", "\\")
+--   end
+
+--   return dir
+-- end
+
+-- local function win32_escaped_dir(dir)
+--   dir = dir:gsub(":", "++")
+--   if not vim.o.shellslash then
+--     dir = dir:gsub("\\", "-")
+--     -- need to escape forward slash as well for windows, see issue #202
+--     dir = dir:gsub("/", "-")
+--   end
+
+--   return dir
+-- end
+
+-- local IS_WIN32 = vim.fn.has "win32" == Lib._VIM_TRUE
+
+-- function Lib.unescape_dir(dir)
+--   return IS_WIN32 and win32_unescaped_dir(dir) or dir:gsub("%%", "/")
+-- end
+
+-- function Lib.escape_dir(dir)
+--   return IS_WIN32 and win32_escaped_dir(dir) or dir:gsub("/", "\\%%")
+-- end
+
+-- function Lib.escaped_session_name_from_cwd()
+--   return IS_WIN32 and Lib.unescape_dir(vim.fn.getcwd()) or Lib.escape_dir(vim.fn.getcwd())
+-- end
+
+-- function Lib.escape_branch_name(branch_name)
+--   return IS_WIN32 and Lib.unescape_dir(branch_name) or Lib.escape_dir(branch_name)
+-- end
+
+-- local function get_win32_legacy_cwd(cwd)
+--   cwd = cwd:gsub(":", "++")
+--   if not vim.o.shellslash then
+--     cwd = cwd:gsub("\\", "-")
+--   end
+
+--   return cwd
+-- end
 
 function Lib.legacy_session_name_from_cwd()
   local cwd = vim.fn.getcwd()
-  return IS_WIN32 and get_win32_legacy_cwd(cwd) or cwd:gsub("/", "-")
+  -- require('json')
+  -- session_name = Lib.SESSION_TABLE[cwd]
+  -- if not session_name
+    session_name = Lib.create_new_session_name()
+  -- end
+
+  return session_name
+  -- return IS_WIN32 and get_win32_legacy_cwd(cwd) or cwd:gsub("/", "-")
 end
 
 function Lib.is_readable(file_path)
